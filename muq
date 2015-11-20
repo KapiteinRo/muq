@@ -67,6 +67,23 @@ muq_pop() {
     rm -f $lastmsg
 }
 
+muq_reset() {
+    _muq_md5 $1
+    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    bottom="$2"
+    if [ $bottom = "top" ]; then bottom="TOP"; fi
+    if [ ! -e "$ORISDIR/$MD5SUM.$bottom" ]; then echo "$1 is not resettable!\nTry: muq reset $1 top"; exit 1; fi
+    if [ $bottom = "TOP" ]
+    then
+        echo "Resetting to original version."
+    else
+        echo "Resetting to push:"
+        lastmsg=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
+        echo "$(cat $lastmsg)"
+    fi
+    cp -f "$ORISDIR/$MD5SUM.$bottom" $1
+}
+
 muq_status() {
     _muq_md5 $1
     if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
@@ -76,8 +93,8 @@ muq_status() {
     if [[ $nummsgs > 0 ]]
     then
         echo "Last known push:\n"
-        lastpush=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
-        echo "$(cat $lastpush)"
+        lastmsg=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
+        echo "$(cat $lastmsg)"
         lastpush="$ORISDIR/$MD5SUM.BOTTOM"
     fi
     chnges=$(diff $lastpush $1)
@@ -107,6 +124,12 @@ case "$1" in
     pop)
         if [ ! -n "$2" ]; then echo "$DYPM $0 pop [file]"; exit 1; fi
         muq_pop $2
+        ;;
+    reset)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 reset [file [num entries]]"; exit 1; fi
+        top="$3"
+        if [ ! -n "$3" ]; then top="BOTTOM"; fi
+        muq_reset $2 $top
         ;;
     status)
         if [ ! -n "$2" ]; then echo "$DYPM $0 status [file]"; exit 1; fi
