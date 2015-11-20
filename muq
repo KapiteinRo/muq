@@ -1,0 +1,125 @@
+#!/bin/sh
+
+DYPM="Did you perchance mean:"
+CURUSER=$(whoami)
+CURMDIR="$(pwd)/.muq"
+OBJSDIR="$CURMDIR/objs"
+MSGSDIR="$CURMDIR/msgs"
+ORISDIR="$CURMDIR/oris"
+EVTSDIR="$CURMDIR/evts"
+
+DTMSTAMP=$(date +"%Y-%m-%d.%H%M.%S")
+MD5SUM="nothing"
+
+_muq_md5() {
+    MD5SUM=$(printf '%s' "$1" | md5sum | cut -d ' ' -f 1)
+}
+
+muq_event() {
+    evthook="$EVTSDIR/$MD5SUM"
+    if [ -e "$evthook.all" ]; then sh $evthook.all; fi
+    if [ -e "$evthook.$1" ]; then sh $evthook.$1; fi
+}
+
+muq_init() {
+    _muq_md5 $1
+    mkdir -p $OBJSDIR $MSGSDIR $ORISDIR $EVTSDIR
+    evthook="$EVTSDIR/$MD5SUM"
+    twbeo="#!/bin/sh\n# This will be executed on"
+    if [ ! -e "$evthook.all" ]; then echo "$twbeo all changes on $1 before any other event.\n" > "$evthook.all"; fi
+    if [ ! -e "$evthook.push" ]; then echo "$twbeo each push on $1, after firing $MD5SUM.all.\n" > "$evthook.push"; fi
+    if [ ! -e "$evthook.pop" ]; then echo "$twbeo each pop on $1, after firing $MD5SUM.all.\n" > "$evthook.pop"; fi
+    if [ ! -e "$evthook.reset" ]; then echo "$twbeo each reset on $1, after firing $MD5SUM.all.\n" > "$evthook.reset"; fi
+    if [ -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 already saved. Try push?"; exit 1; fi
+    cp $1 "$ORISDIR/$MD5SUM.TOP" || { echo "Failed to prepare $ORISDIR/$MD5SUM.TOP for $1"; exit 1; }
+    echo "Init: $1 saved."
+}
+
+muq_push() {
+    _muq_md5 $1
+    pushmd5="$MD5SUM"
+    _muq_md5 "$DTMSTAMP.$pushmd5"
+    lastpush="$ORISDIR/$pushmd5.BOTTOM"
+    pushmsg=""
+    if [ -n "$2" ]; then pushmsg="$2"; fi
+    if [ ! -e "$lastpush" ]; then lastpush="$ORISDIR/$pushmd5.TOP"; fi
+    pushobj=$(diff $lastpush $1)
+    if [ ! -n "$pushobj" ]; then echo "No changes found."; exit 1; fi
+    echo "$pushobj" > "$OBJSDIR/$DTMSTAMP.$pushmd5.PATCH"
+    pushmsg="push: $MD5SUM\n$(date +'%Y-%m-%d %H:%M:%S') - $CURUSER - $pushmsg"
+    echo "$pushmsg"
+    echo "$pushmsg" > "$MSGSDIR/$DTMSTAMP.$pushmd5"
+    cp -f $1 "$ORISDIR/$pushmd5.BOTTOM"
+    echo "Pushed $1"
+    muq_event "push"
+}
+
+muq_pop() {
+    _muq_md5 $1
+    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    lastpush=$(ls -c $OBJSDIR/*.$MD5SUM.PATCH 2> /dev/null | head -1)
+    if [ ! -n "$lastpush" ]; then echo "No previous push found for $1.\nTo return to previous state, use: muq reset $1 top"; exit 1; fi
+    cp -f $1 "$ORISDIR/$MD5SUM.POP" || { echo "Failed to prepare pop $1"; exit 1; }
+    lastmsg=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
+    echo "Popping last push:\n$(cat $lastmsg)"
+    patch -R -s "$ORISDIR/$MD5SUM.POP" -i $lastpush -o $1
+    rm -f $lastpush
+    rm -f $lastmsg
+}
+
+muq_status() {
+    _muq_md5 $1
+    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    nummsgs=$(ls $MSGSDIR/*.$MD5SUM 2> /dev/null | wc -l | tr -d ' ')
+    echo "$nummsgs pushes for $1 $CURUSER"
+    lastpush="$ORISDIR/$MD5SUM.TOP"
+    if [[ $nummsgs > 0 ]]
+    then
+        echo "Last known push:\n"
+        lastpush=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
+        echo "$(cat $lastpush)"
+        lastpush="$ORISDIR/$MD5SUM.BOTTOM"
+    fi
+    chnges=$(diff $lastpush $1)
+    if [ ! -n "$chnges" ]; then echo "$1 has no changes."; else echo "$1 has changed.\nUse: muq push $1 [\"Push message\"]"; fi
+}
+
+muq_log() {
+    _muq_md5 $1
+    echo "Last $2 push messages for $1:"
+    msgs=($(ls -c $MSGSDIR/*.$MD5SUM 2> /dev/null | head -$2))
+    for i in "${msgs[@]}"
+    do
+        echo "$(cat $i)\n---\n"
+    done
+}
+
+
+case "$1" in
+    init)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 init [file]"; exit 1; fi
+        muq_init $2
+        ;;
+    push)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 push [file [\"Push message\"]"; exit 1; fi
+        muq_push $2 $3
+        ;;
+    pop)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 pop [file]"; exit 1; fi
+        muq_pop $2
+        ;;
+    status)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 status [file]"; exit 1; fi
+        muq_status $2
+        ;;
+    log)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 log [file [num entries]]"; exit 1; fi
+        numlog=10
+        if [ -n "$3" ]; then numlog=$3; fi
+        muq_log $2 $numlog
+        ;;
+    *)
+        echo "Usage: $0 [init|push|pop|pick|status|log|reset] [file] [\"Push message\"]\n"
+        ;;
+esac
+

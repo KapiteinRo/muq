@@ -1,0 +1,7 @@
+# Ignore vim stuff
+*~
+*.swp
+
+# Ignore test
+.muq/
+test.txt
