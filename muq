@@ -62,9 +62,10 @@ muq_pop() {
     cp -f $1 "$ORISDIR/$MD5SUM.POP" || { echo "Failed to prepare pop $1"; exit 1; }
     lastmsg=$(ls -c $MSGSDIR/*.$MD5SUM | head -1)
     echo "Popping last push:\n$(cat $lastmsg)"
-    patch -R -s "$ORISDIR/$MD5SUM.POP" -i $lastpush -o $1
+    patch -R -s "$ORISDIR/$MD5SUM.POP" -i $lastpush -o $1 || { echo "Errors in patch!!\nRollback using: muq reset $1"; exit 1; }
     rm -f $lastpush
     rm -f $lastmsg
+    muq_event "pop"
 }
 
 muq_reset() {
@@ -82,6 +83,34 @@ muq_reset() {
         echo "$(cat $lastmsg)"
     fi
     cp -f "$ORISDIR/$MD5SUM.$bottom" $1
+    muq_event "reset"
+}
+
+muq_pick() {
+    _muq_md5 $1
+    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    hshes=($(ls -c $MSGSDIR/*.$MD5SUM 2> /dev/null))
+    hshfound=-1
+    icount=0
+    for i in "${hshes[@]}"
+    do
+        icount=$((icount+1))
+        msghsh="$(head -1 $i)"
+        if [ "push: $2" = "$msghsh" ]; then hshfound=$icount; fi
+    done
+    if [[ $hshfound = -1 ]]; then echo "Push $2 not found!"; exit 1; fi
+    cp -f "$ORISDIR/$MD5SUM.BOTTOM" $1
+    cp -f $1 "$ORISDIR/$MD5SUM.PICK"
+    icount=0
+    ptches=($(ls -c $OBJSDIR/*.$MD5SUM.PATCH 2> /dev/null))
+    while [[ $icount < $hshfound ]]; do
+        icount=$((icount+1))
+        echo "Applying push:\n$(cat ${hshes[$icount]})\n.."
+        cp -f $1 "$ORISDIR/$MD5SUM.PICK"
+        patch -R -s "$ORISDIR/$MD5SUM.PICK" -i "${ptches[$icount]}" -o "$1" || { echo "Errors in patch!!\nRollback using: muq reset $1"; exit 1; }
+    done
+    echo "Done.."
+    muq_event "pop"
 }
 
 muq_status() {
@@ -98,7 +127,7 @@ muq_status() {
         lastpush="$ORISDIR/$MD5SUM.BOTTOM"
     fi
     chnges=$(diff $lastpush $1)
-    if [ ! -n "$chnges" ]; then echo "$1 has no changes."; else echo "$1 has changed.\nUse: muq push $1 [\"Push message\"]"; fi
+    if [ ! -n "$chnges" ]; then echo "\n$1 has no changes."; else echo "\n$1 has changed.\nUse: muq push $1 [\"Push message\"]"; fi
 }
 
 muq_log() {
@@ -130,6 +159,11 @@ case "$1" in
         top="$3"
         if [ ! -n "$3" ]; then top="BOTTOM"; fi
         muq_reset $2 $top
+        ;;
+    pick)
+        if [ ! -n "$2" ]; then echo "$DYPM $0 pick [file] [hash]"; exit 1; fi
+        if [ ! -n "$3" ]; then echo "No push hash supplied!\n$DYPM $0 pick $1 [hash]\nTo find hashes, use: $0 log $2"; exit 1; fi
+        muq_pick $2 $3
         ;;
     status)
         if [ ! -n "$2" ]; then echo "$DYPM $0 status [file]"; exit 1; fi

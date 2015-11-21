@@ -68,12 +68,16 @@ muq pop yourfile.txt
 
 Or the state before that, or before that. Etc.
 
-**Warning:** `pop` not only applies the previous `push`. It also removes it. Meaning you can go back, but can't go forward, unless you hit `reset`.
+**Warning:** `pop` not only applies the previous `push`. It also removes it. Meaning you can go back, but can't go forward, unless you hit `reset`. If you wish to go back without removing the previous pushes, use `pick`.
 
 ### pick
 If you really want to roll back all the way to a far certain past, you can use `pick` to roll back to a certain push.
 
-**Warning:** *Work in progress, not implemented yet.*
+```
+muq pick yourfile.txt cfe249228e3eb18fa152e3e349ec55fa
+```
+
+**Note:** Unlike `pop`, this doesn't delete your previous pushes.
 
 ### reset
 If everything has failed, you can easily return to the last push, using `reset`.
