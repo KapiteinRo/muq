@@ -89,7 +89,7 @@ muq reset yourfile.txt
 If everything has failed badly, you can also return to the very first version, by adding `top`.
 
 ```
-muq reset yourfile.txt pop
+muq reset yourfile.txt top
 ```
 
 **Note:** If you make changes after reset, and hit push. Make sure you mention the reset in the push message.
