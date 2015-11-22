@@ -8,14 +8,17 @@ MSGSDIR="$CURMDIR/msgs"
 ORISDIR="$CURMDIR/oris"
 EVTSDIR="$CURMDIR/evts"
 
+TOP=$(ls -l $ORISDIR | awk '/.TOP/ {print $9}')
+BOTTOM=${TOP%\.TOP}".BOTTOM"
+
 DTMSTAMP=$(date +"%Y-%m-%d.%H%M.%S")
-MD5SUM="nothing"
+MD5SUM=""
 
 _muq_md5() {
     MD5SUM=$(printf '%s' "$1" | md5sum | cut -d ' ' -f 1)
 }
 
-muq_event() {
+function muq_event() {
     evthook="$EVTSDIR/$MD5SUM"
     if [ -e "$evthook.all" ]; then sh $evthook.all; fi
     if [ -e "$evthook.$1" ]; then sh $evthook.$1; fi
@@ -23,40 +26,39 @@ muq_event() {
 
 muq_init() {
     _muq_md5 $1
+    if [ -e "$CURMDIR" ]; then echo "Setup is already done"; exit 1; fi
     mkdir -p $OBJSDIR $MSGSDIR $ORISDIR $EVTSDIR
     evthook="$EVTSDIR/$MD5SUM"
-    twbeo="#!/bin/sh\n# This will be executed on"
+    twbeo="\# This will be created"
     if [ ! -e "$evthook.all" ]; then echo "$twbeo all changes on $1 before any other event.\n" > "$evthook.all"; fi
     if [ ! -e "$evthook.push" ]; then echo "$twbeo each push on $1, after firing $MD5SUM.all.\n" > "$evthook.push"; fi
     if [ ! -e "$evthook.pop" ]; then echo "$twbeo each pop on $1, after firing $MD5SUM.all.\n" > "$evthook.pop"; fi
     if [ ! -e "$evthook.reset" ]; then echo "$twbeo each reset on $1, after firing $MD5SUM.all.\n" > "$evthook.reset"; fi
-    if [ -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 already saved. Try push?"; exit 1; fi
-    cp $1 "$ORISDIR/$MD5SUM.TOP" || { echo "Failed to prepare $ORISDIR/$MD5SUM.TOP for $1"; exit 1; }
+    cp -r $1 "$ORISDIR/$MD5SUM.TOP" || { echo "Failed to prepare $ORISDIR/$MD5SUM.TOP for $1"; exit 1; }
     echo "Init: $1 saved."
 }
 
 muq_push() {
-    _muq_md5 $1
-    pushmd5="$MD5SUM"
+    pushmd5="$BOTTOM"
     _muq_md5 "$DTMSTAMP.$pushmd5"
-    lastpush="$ORISDIR/$pushmd5.BOTTOM"
+    lastpush="$ORISDIR/$BOTTOM"
     pushmsg=""
     if [ -n "$2" ]; then pushmsg="$2"; fi
-    if [ ! -e "$lastpush" ]; then lastpush="$ORISDIR/$pushmd5.TOP"; fi
+    if [ !  -e "$lastpush" ]; then lastpush="$ORISDIR/$TOP"; fi
     pushobj=$(diff $lastpush $1)
     if [ ! -n "$pushobj" ]; then echo "No changes found."; exit 1; fi
     echo "$pushobj" > "$OBJSDIR/$DTMSTAMP.$pushmd5.PATCH"
     pushmsg="push: $MD5SUM\n$(date +'%Y-%m-%d %H:%M:%S') - $CURUSER - $pushmsg"
     echo "$pushmsg"
     echo "$pushmsg" > "$MSGSDIR/$DTMSTAMP.$pushmd5"
-    cp -f $1 "$ORISDIR/$pushmd5.BOTTOM"
+    cp -r $1 "$ORISDIR/$BOTTOM"
     echo "Pushed $1"
     muq_event "push"
 }
 
 muq_pop() {
     _muq_md5 $1
-    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    if [ ! -e "$ORISDIR/$TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
     lastpush=$(ls -c $OBJSDIR/*.$MD5SUM.PATCH 2> /dev/null | head -1)
     if [ ! -n "$lastpush" ]; then echo "No previous push found for $1.\nTo return to previous state, use: muq reset $1 top"; exit 1; fi
     cp -f $1 "$ORISDIR/$MD5SUM.POP" || { echo "Failed to prepare pop $1"; exit 1; }
@@ -70,7 +72,7 @@ muq_pop() {
 
 muq_reset() {
     _muq_md5 $1
-    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    if [ ! -f "$ORISDIR/$TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
     bottom="$2"
     if [ $bottom = "top" ]; then bottom="TOP"; fi
     if [ ! -e "$ORISDIR/$MD5SUM.$bottom" ]; then echo "$1 is not resettable!\nTry: muq reset $1 top"; exit 1; fi
@@ -88,7 +90,7 @@ muq_reset() {
 
 muq_pick() {
     _muq_md5 $1
-    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    if [ ! -f "$ORISDIR/$TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
     hshes=($(ls -c $MSGSDIR/*.$MD5SUM 2> /dev/null))
     hshfound=-1
     icount=0
@@ -114,11 +116,10 @@ muq_pick() {
 }
 
 muq_status() {
-    _muq_md5 $1
-    if [ ! -e "$ORISDIR/$MD5SUM.TOP" ]; then echo "$1 is not tracked!"; exit 1; fi
+    if [ ! -e $ORISDIR/$TOP ]; then echo "$1 is not tracked!"; exit 1; fi
     nummsgs=$(ls $MSGSDIR/*.$MD5SUM 2> /dev/null | wc -l | tr -d ' ')
     echo "$nummsgs pushes for $1 $CURUSER"
-    lastpush="$ORISDIR/$MD5SUM.TOP"
+    lastpush="$ORISDIR/$TOP"
     if [[ $nummsgs > 0 ]]
     then
         echo "Last known push:\n"
@@ -141,7 +142,7 @@ muq_log() {
 }
 
 
-case "$1" in
+case $1 in
     init)
         if [ ! -n "$2" ]; then echo "$DYPM $0 init [file]"; exit 1; fi
         muq_init $2

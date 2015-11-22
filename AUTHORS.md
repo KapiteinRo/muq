@@ -11,4 +11,4 @@ IRC: #tweakers on irc.rizon.net
 
 # Contributors
 
-*(Your name here?)*
+* [Chris Dorsman](https://github.com/Typnix/)
