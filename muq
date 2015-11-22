@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 DYPM="Did you perchance mean:"
 CURUSER=$(whoami)
